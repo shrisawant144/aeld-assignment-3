@@ -1,5 +1,47 @@
 #include "systemcalls.h"
 
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+static bool run_command(char *const command[], const char *outputfile)
+{
+    fflush(stdout);
+
+    pid_t child = fork();
+    if (child == -1) {
+        return false;
+    }
+
+    if (child == 0) {
+        if (outputfile != NULL) {
+            int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd == -1) {
+                _exit(EXIT_FAILURE);
+            }
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                close(fd);
+                _exit(EXIT_FAILURE);
+            }
+            close(fd);
+        }
+
+        execv(command[0], command);
+        _exit(EXIT_FAILURE);
+    }
+
+    int status;
+    pid_t result;
+    do {
+        result = waitpid(child, &status, 0);
+    } while (result == -1 && errno == EINTR);
+
+    return result != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -9,15 +51,12 @@
 */
 bool do_system(const char *cmd)
 {
+    if (cmd == NULL) {
+        return false;
+    }
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
-
-    return true;
+    int status = system(cmd);
+    return status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 /**
@@ -36,6 +75,10 @@ bool do_system(const char *cmd)
 
 bool do_exec(int count, ...)
 {
+    if (count < 1) {
+        return false;
+    }
+
     va_list args;
     va_start(args, count);
     char * command[count+1];
@@ -45,23 +88,8 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
-
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
-
     va_end(args);
-
-    return true;
+    return run_command(command, NULL);
 }
 
 /**
@@ -71,6 +99,10 @@ bool do_exec(int count, ...)
 */
 bool do_exec_redirect(const char *outputfile, int count, ...)
 {
+    if (outputfile == NULL || count < 1) {
+        return false;
+    }
+
     va_list args;
     va_start(args, count);
     char * command[count+1];
@@ -80,20 +112,6 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
-
-
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
-
     va_end(args);
-
-    return true;
+    return run_command(command, outputfile);
 }
